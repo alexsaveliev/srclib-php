@@ -1,0 +1,59 @@
+apply plugin: 'java'
+apply plugin: 'antlr'
+apply plugin: 'application'
+
+mainClassName = "com.sourcegraph.toolchain.php.Main"
+version = '0.0.1-SNAPSHOT'
+group = 'com.sourcegraph.toolchain'
+
+sourceCompatibility = '1.8'
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	compile 'com.google.code.gson:gson:2.3'
+	compile 'org.apache.commons:commons-lang3:3.3.2'
+	compile 'commons-io:commons-io:2.4'
+	compile 'com.beust:jcommander:1.30'
+
+	compile 'org.slf4j:slf4j-api:1.7.12'
+	runtime 'org.slf4j:slf4j-log4j12:1.7.12'
+
+   	antlr "org.antlr:antlr4:4.5.1"
+}
+
+generateGrammarSource {
+    outputDirectory = new File("${project.buildDir}/generated-src/antlr/com/sourcegraph/toolchain/php/antlr4")
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir "${project.buildDir}/generated-src/antlr"
+        }
+    }
+}
+
+
+jar {
+	def gitRef = "git rev-parse --short HEAD".execute().text.trim()
+
+	manifest {
+		attributes "Main-Class" : mainClassName
+		attributes "Javagraph-Version" : gitRef
+	}
+
+	dependsOn configurations.runtime
+
+	from {
+		configurations.runtime.collect {
+			it.isDirectory() ? it : zipTree(it)
+		}
+	} {
+		exclude "META-INF/*.SF"
+		exclude "META-INF/*.DSA"
+		exclude "META-INF/*.RSA"
+	}
+}

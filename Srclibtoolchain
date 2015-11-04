@@ -1,0 +1,37 @@
+{
+  "Tools": [
+    {
+      "Subcmd": "scan",
+      "Op": "scan",
+      "SourceUnitTypes": [
+        "PHP"
+      ]
+    },
+    {
+      "Subcmd": "graph",
+      "Op": "graph",
+      "SourceUnitTypes": [
+        "PHP"
+      ]
+    },
+    {
+      "Subcmd": "depresolve",
+      "Op": "depresolve",
+      "SourceUnitTypes": [
+        "PHP"
+      ]
+    }
+  ],
+  "Bundle": {
+    "Paths": [
+      "Srclibtoolchain",
+      ".bin",
+      ".bin/srclib-php",
+      ".bin/srclib-php.bat",
+      ".bin/srclib-php.jar"
+    ],
+    "Commands": [
+      "make .bin/srclib-php.jar"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+.project
+.classpath
+.settings/
+
+.bin/srclib-php.jar
+build/
+gen/
+.gradle
+
+.idea/
+*.iml
