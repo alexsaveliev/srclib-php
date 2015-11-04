@@ -35,10 +35,10 @@ public class ScanCommand {
             }
 
             SourceUnit unit = new SourceUnit();
-            unit.Type = "ObjectiveC";
+            unit.Type = "PHP";
             unit.Name = ".";
             unit.Dir = subdir;
-            unit.Files = ScanUtil.scanFiles(PathUtil.CWD.toAbsolutePath().toString(), new String[] {".h", ".m", ".mm"});
+            unit.Files = ScanUtil.scanFiles(PathUtil.CWD.toAbsolutePath().toString(), new String[] {".php"});
 
             Collection<SourceUnit> units = Collections.singleton(unit);
             normalize(units);
@@ -63,11 +63,6 @@ public class ScanCommand {
                 thenComparing(dependency -> dependency.scope).
                 thenComparing(dependency -> dependency.file == null ? StringUtils.EMPTY : dependency.file);
 
-        Comparator<String[]> sourcePathComparator = Comparator.comparing(sourcePathElement -> sourcePathElement[0]);
-        sourcePathComparator = sourcePathComparator.
-                thenComparing(sourcePathElement -> sourcePathElement[1]).
-                thenComparing(sourcePathElement -> sourcePathElement[2]);
-
         for (SourceUnit unit : units) {
             unit.Dir = PathUtil.relativizeCwd(unit.Dir);
             unit.Dependencies = unit.Dependencies.stream()
@@ -83,38 +78,6 @@ public class ScanCommand {
             List<String> externalFiles = new ArrayList<>();
             splitInternalAndExternalFiles(unit.Files, internalFiles, externalFiles);
             unit.Files = internalFiles;
-            if (!externalFiles.isEmpty()) {
-                unit.Data.put("ExtraSourceFiles", externalFiles);
-            }
-            if (unit.Data.containsKey("POMFile")) {
-                unit.Data.put("POMFile", PathUtil.relativizeCwd((String) unit.Data.get("POMFile")));
-            }
-            if (unit.Data.containsKey("ClassPath")) {
-                Collection<String> classPath = (Collection<String>) unit.Data.get("ClassPath");
-                classPath = classPath.stream().
-                        map(PathUtil::relativizeCwd).
-                        collect(Collectors.toList());
-                unit.Data.put("ClassPath", classPath);
-            }
-            if (unit.Data.containsKey("BootClassPath")) {
-                Collection<String> classPath = (Collection<String>) unit.Data.get("BootClassPath");
-                classPath = classPath.stream().
-                        map(PathUtil::relativizeCwd).
-                        sorted().
-                        collect(Collectors.toList());
-                unit.Data.put("BootClassPath", classPath);
-            }
-            if (unit.Data.containsKey("SourcePath")) {
-                Collection<String[]> sourcePath = (Collection<String[]>) unit.Data.get("SourcePath");
-                sourcePath = sourcePath.stream().
-                        map(sourcePathElement -> {
-                            sourcePathElement[2] = PathUtil.relativizeCwd(sourcePathElement[2]);
-                            return sourcePathElement;
-                        }).
-                        sorted(sourcePathComparator).
-                        collect(Collectors.toList());
-                unit.Data.put("SourcePath", sourcePath);
-            }
         }
     }
 

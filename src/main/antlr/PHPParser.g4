@@ -447,6 +447,7 @@ parenthesis
 expression
 // Grouped by prioriries: http://php.net/manual/en/language.operators.precedence.php
 // and http://www.phpeveryday.com/articles/PHP-Operators-Operator-Priority-P312.html
+// alexsaveliev separated include/require/include_once/require_once
     : Clone expression                                         #CloneExpression
     | newexpr                                                     #NewExpression
     
@@ -512,12 +513,17 @@ expression
     | Empty '(' chain ')'                                      #SpecialWordExpression
     | Eval '(' expression ')'                                  #SpecialWordExpression
     | Exit ( '(' ')' | parenthesis )?                          #SpecialWordExpression
-    | Include expression                                       #SpecialWordExpression
-    | IncludeOnce expression                                   #SpecialWordExpression
-    | Require expression                                       #SpecialWordExpression
-    | RequireOnce expression                                   #SpecialWordExpression
+    | Include preprocessorExpression                           #SpecialWordExpression
+    | IncludeOnce preprocessorExpression                       #SpecialWordExpression
+    | Require preprocessorExpression                           #SpecialWordExpression
+    | RequireOnce preprocessorExpression                       #SpecialWordExpression
 
     | Static? Function '&'? '(' formalParameterList ')' lambdaFunctionUseVars? blockStatement  #LambdaFunctionExpression
+    ;
+
+// alexsaveliev separated include/require/include_once/require_once
+preprocessorExpression
+    : expression 
     ;
 
 newexpr
