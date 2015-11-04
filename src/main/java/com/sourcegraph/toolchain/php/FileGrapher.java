@@ -13,7 +13,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.BitSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,19 +30,14 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
 
     private String file;
 
-    /**
-     * keeps global and function-level variables. At each level holds map
-     * variable name => is_local
-     */
-    private Stack<Map<String, Boolean>> vars = new Stack<>();
-
     private String blockName;
+    private ClassInfo currentClassInfo;
 
     public FileGrapher(PHPGraph graph, String file) {
         this.graph = graph;
         this.file = file;
 
-        vars.push(new HashMap<>());
+        graph.vars.push(new HashMap<>());
     }
 
     protected Def def(ParserRuleContext ctx, String kind) {
@@ -162,7 +160,7 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
         fnDef.defKey = new DefKey(null, fnDef.name);
         emit(fnDef);
 
-        vars.push(new HashMap<>());
+        graph.vars.push(new HashMap<>());
         blockName = fnDef.name;
 
         // TODO (alexsaveliev): what is ctx.typeParameterListInBrackets()?
@@ -173,16 +171,12 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
         for (PHPParser.FormalParameterContext fnParam : fnParams) {
             PHPParser.TypeHintContext typeHint = fnParam.typeHint();
             if (typeHint != null) {
-                PHPParser.QualifiedStaticTypeRefContext staticTypeRef = typeHint.
-                        qualifiedStaticTypeRef();
-                if (staticTypeRef != null) {
-                    PHPParser.QualifiedNamespaceNameContext qName = staticTypeRef.qualifiedNamespaceName();
-                    if (qName != null) {
-                        Ref typeRef = ref(qName);
-                        // TODO (alexsaveliev) namespace resolution - we should combine name with namespace prefix
-                        typeRef.defKey = new DefKey(null, qName.getText());
-                        emit(typeRef);
-                    }
+                ParserRuleContext qName = qName(typeHint.qualifiedStaticTypeRef());
+                if (qName != null) {
+                    Ref typeRef = ref(qName);
+                    // TODO (alexsaveliev) namespace resolution - we should combine name with namespace prefix
+                    typeRef.defKey = new DefKey(null, qName.getText());
+                    emit(typeRef);
                 }
             }
             Def fnArgDef = def(fnParam.variableInitializer().VarName().getSymbol(), DefKind.ARGUMENT);
@@ -193,7 +187,7 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
 
     @Override
     public void exitFunctionDeclaration(PHPParser.FunctionDeclarationContext ctx) {
-        vars.pop();
+        graph.vars.pop();
         blockName = null;
     }
 
@@ -216,7 +210,7 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
             return;
         }
         String varName = varNameNode.getText();
-        Map<String, Boolean> localVars = vars.peek();
+        Map<String, Boolean> localVars = graph.vars.peek();
         Boolean local = localVars.get(varName);
         if (local == null) {
             // new variable
@@ -242,7 +236,7 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
 
     @Override
     public void enterGlobalStatement(PHPParser.GlobalStatementContext ctx) {
-        if (this.vars.size() < 2) {
+        if (this.graph.vars.size() < 2) {
             return;
         }
         List<PHPParser.GlobalVarContext> vars = ctx.globalVar();
@@ -253,15 +247,92 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
             TerminalNode varNameNode = var.VarName();
             if (varNameNode != null) {
                 String varName = varNameNode.getText();
-                if (!this.vars.firstElement().containsKey(varName)) {
+                if (!this.graph.vars.firstElement().containsKey(varName)) {
                     continue;
                 }
                 Ref globalVarRef = ref(varNameNode);
                 globalVarRef.defKey = new DefKey(null, varName);
                 emit(globalVarRef);
-                this.vars.peek().put(varName, false);
+                this.graph.vars.peek().put(varName, false);
             }
         }
+    }
+
+    @Override
+    public void enterClassDeclaration(PHPParser.ClassDeclarationContext ctx) {
+        TerminalNode interfaceNode = ctx.Interface();
+        blockName = ctx.identifier().getText();
+        currentClassInfo = new ClassInfo();
+        this.graph.classes.put(blockName, currentClassInfo);
+
+        if (interfaceNode != null) {
+            Def interfaceDef = def(ctx.identifier(), DefKind.INTERFACE);
+            interfaceDef.defKey = new DefKey(null, interfaceDef.name);
+            emit(interfaceDef);
+
+            PHPParser.InterfaceListContext interfaces = ctx.interfaceList();
+            if (interfaces == null) {
+                return;
+            }
+            List<PHPParser.QualifiedStaticTypeRefContext> iNames = interfaces.qualifiedStaticTypeRef();
+            if (iNames == null) {
+                return;
+            }
+            for (PHPParser.QualifiedStaticTypeRefContext i : iNames) {
+                ParserRuleContext qName = qName(i);
+                if (qName == null) {
+                    continue;
+                }
+                String extendsInterfaceName = qName.getText();
+                Ref extendsInterfaceRef = ref(qName);
+                extendsInterfaceRef.defKey = new DefKey(null, extendsInterfaceName);
+                emit(extendsInterfaceRef);
+                currentClassInfo.extendsClasses.add(extendsInterfaceName);
+            }
+
+        } else {
+            PHPParser.ClassEntryTypeContext classEntryTypeContext = ctx.classEntryType();
+            Def classOrTraitDef = def(ctx.identifier(),
+                    classEntryTypeContext.Trait() != null ? DefKind.TRAIT : DefKind.CLASS);
+            classOrTraitDef.defKey = new DefKey(null, classOrTraitDef.name);
+            emit(classOrTraitDef);
+
+            PHPParser.QualifiedStaticTypeRefContext extendsCtx = ctx.qualifiedStaticTypeRef();
+            ParserRuleContext qName = qName(extendsCtx);
+            if (qName != null) {
+                String extendsName = qName.getText();
+                Ref extendsRef = ref(qName);
+                extendsRef.defKey = new DefKey(null, extendsName);
+                emit(extendsRef);
+                currentClassInfo.extendsClasses.add(extendsName);
+            }
+
+            PHPParser.InterfaceListContext interfaces = ctx.interfaceList();
+            if (interfaces == null) {
+                return;
+            }
+
+            List<PHPParser.QualifiedStaticTypeRefContext> iNames = interfaces.qualifiedStaticTypeRef();
+            if (iNames == null) {
+                return;
+            }
+            for (PHPParser.QualifiedStaticTypeRefContext i : iNames) {
+                qName = qName(i);
+                if (qName == null) {
+                    continue;
+                }
+                String implementsInterfaceName = qName.getText();
+                Ref implementsInterfaceRef = ref(qName);
+                implementsInterfaceRef.defKey = new DefKey(null, implementsInterfaceName);
+                emit(implementsInterfaceRef);
+                currentClassInfo.implementsClasses.add(implementsInterfaceName);
+            }
+        }
+    }
+
+    @Override
+    public void exitClassDeclaration(PHPParser.ClassDeclarationContext ctx) {
+        blockName = null;
     }
 
     private static String extractIncludeName(String expressionText) {
@@ -270,6 +341,12 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
             return m.group(1);
         }
         return null;
+    }
+    private static ParserRuleContext qName(PHPParser.QualifiedStaticTypeRefContext ctx) {
+        if (ctx == null) {
+            return null;
+        }
+        return ctx.qualifiedNamespaceName();
     }
 
 }

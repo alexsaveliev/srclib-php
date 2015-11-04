@@ -21,12 +21,13 @@ public class PHPGraph {
 
     GraphWriter writer;
 
-    Map<String, String> globalVars = new HashMap<>();
-    // class name -> (variable -> type)
-    Map<String, Map<String, String>> instanceVars = new HashMap<>();
+    /**
+     * keeps global and function-level variables. At each level holds map
+     * variable name => is_local
+     */
+    Stack<Map<String, Boolean>> vars = new Stack<>();
 
-    Set<String> functions = new HashSet<>();
-    Set<String> types = new HashSet<>();
+    Map<String, ClassInfo> classes = new HashMap<>();
 
     private Set<String> visited = new HashSet<>();
     private Set<String> files;
