@@ -3,7 +3,6 @@ package com.sourcegraph.toolchain.core;
 import com.google.gson.*;
 
 import java.lang.reflect.Type;
-import java.util.List;
 
 /**
  * Definition object
@@ -11,17 +10,21 @@ import java.util.List;
 public class Def {
 
     /**
-     * Definition key
+     * DefKey is the natural unique key for a def. It is stable
+     * (subsequent runs of a grapher will emit the same defs with the same
+     * DefKeys).
      */
     public DefKey defKey;
 
     /**
-     * Definition kind
+     * Kind is the kind of thing this definition is. This is
+     * language-specific. Possible values include "type", "func",
+     * "var", etc.
      */
     public String kind;
 
     /**
-     * Definition name
+     * Name of the definition. This need not be unique.
      */
     public String name;
 
@@ -29,16 +32,6 @@ public class Def {
      * Source file
      */
     public String file;
-
-    /**
-     * Ident start
-     */
-    public int identStart;
-
-    /**
-     * Ident end
-     */
-    public int identEnd;
 
     /**
      * Definition start
@@ -50,16 +43,25 @@ public class Def {
      */
     public int defEnd;
 
-    /**
-     * Modifiers
+    /** Exported is whether this def is part of a source unit's
+     * public API. For example, in Java a "public" field isExported.
      */
-    public List<String> modifiers;
+    public boolean exported;
 
-    public String pkg;
+    /**
+     * Local is whether this def is local to a function or some
+     * other inner scope. Local defs do *not* have module,
+     * package, or file scope. For example, in Java a function's
+     * args are Local, but fields with "private" scope are not
+     * Local.
+     */
+    public boolean local;
 
-    public String doc;
-
-    public String typeExpr;
+    /**
+     * Test is whether this def is defined in test code (as opposed to main
+     * code). For example, definitions in Go *_test.go files have Test = true.
+     */
+    public boolean test;
 
     @Override
     public boolean equals(Object o) {
@@ -101,44 +103,11 @@ public class Def {
             object.add("DefStart", new JsonPrimitive(sym.defStart));
             object.add("DefEnd", new JsonPrimitive(sym.defEnd));
 
-            boolean exported;
-            if (sym.modifiers != null) {
-                exported = sym.modifiers.contains("public");
-                object.add("Exported", new JsonPrimitive(exported));
-            } else {
-                exported = false;
-                object.add("Exported", new JsonPrimitive(false));
-            }
+            object.add("Kind", new JsonPrimitive(sym.kind));
 
-            object.add("Local", new JsonPrimitive(!exported &&
-                    !(sym.kind.equals("PACKAGE") ||
-                            sym.kind.equals("ENUM") ||
-                            sym.kind.equals("CLASS") ||
-                            sym.kind.equals("ANNOTATION_TYPE") ||
-                            sym.kind.equals("INTERFACE") ||
-                            sym.kind.equals("ENUM_CONSTANT") ||
-                            sym.kind.equals("FIELD") ||
-                            sym.kind.equals("METHOD") ||
-                            sym.kind.equals("CONSTRUCTOR"))));
-
-            switch (sym.kind) {
-                case "ENUM":
-                case "CLASS":
-                case "INTERFACE":
-                case "ANNOTATION_TYPE":
-                    object.add("Kind", new JsonPrimitive("type"));
-                    break;
-                case "METHOD":
-                case "CONSTRUCTOR":
-                    object.add("Kind", new JsonPrimitive("func"));
-                    break;
-                case "PACKAGE":
-                    object.add("Kind", new JsonPrimitive("package"));
-                    break;
-                default:
-                    object.add("Kind", new JsonPrimitive("var"));
-                    break;
-            }
+            object.add("Exported", new JsonPrimitive(sym.exported));
+            object.add("Local", new JsonPrimitive(sym.local));
+            object.add("Test", new JsonPrimitive(sym.test));
 
             object.add("Path", new JsonPrimitive(sym.defKey.formatPath()));
             object.add("TreePath", new JsonPrimitive(sym.defKey.formatTreePath()));

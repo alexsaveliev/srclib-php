@@ -26,9 +26,20 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
     private PHPGraph graph;
 
     private String file;
+
+    /**
+     * keeps global and function-level variables. At each level holds map
+     * variable name => is_local
+     */
+    private Stack<Map<String, Boolean>> vars = new Stack<>();
+
+    private String blockName;
+
     public FileGrapher(PHPGraph graph, String file) {
         this.graph = graph;
         this.file = file;
+
+        vars.push(new HashMap<>());
     }
 
     protected Def def(ParserRuleContext ctx, String kind) {
@@ -38,6 +49,7 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
         def.name = ctx.getText();
         def.file = this.file;
         def.kind = kind;
+        initDef(def);
         return def;
     }
 
@@ -48,7 +60,14 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
         def.name = token.getText();
         def.file = this.file;
         def.kind = kind;
+        initDef(def);
         return def;
+    }
+
+    protected void initDef(Def def) {
+        def.test = false; // not in PHP
+        def.exported = DefKind.FUNCTION.equals(def.kind); // TODO
+        def.local = !def.exported;
     }
 
     protected Ref ref(ParserRuleContext ctx) {
@@ -139,9 +158,12 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
 
     @Override
     public void enterFunctionDeclaration(PHPParser.FunctionDeclarationContext ctx) {
-        Def fnDef = def(ctx.identifier(), "FUNC");
+        Def fnDef = def(ctx.identifier(), DefKind.FUNCTION);
         fnDef.defKey = new DefKey(null, fnDef.name);
         emit(fnDef);
+
+        vars.push(new HashMap<>());
+        blockName = fnDef.name;
 
         // TODO (alexsaveliev): what is ctx.typeParameterListInBrackets()?
         List<PHPParser.FormalParameterContext> fnParams = ctx.formalParameterList().formalParameter();
@@ -163,10 +185,16 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
                     }
                 }
             }
-            Def fnArgDef = def(fnParam.variableInitializer().VarName().getSymbol(), "ARG");
+            Def fnArgDef = def(fnParam.variableInitializer().VarName().getSymbol(), DefKind.ARGUMENT);
             fnArgDef.defKey = new DefKey(null, fnDef.defKey.getPath() + '/' + fnArgDef.name);
             emit(fnArgDef);
         }
+    }
+
+    @Override
+    public void exitFunctionDeclaration(PHPParser.FunctionDeclarationContext ctx) {
+        vars.pop();
+        blockName = null;
     }
 
     @Override
@@ -183,7 +211,57 @@ public class FileGrapher extends PHPParserBaseListener implements ANTLRErrorList
 
     @Override
     public void enterKeyedVariable(PHPParser.KeyedVariableContext ctx) {
+        TerminalNode varNameNode = ctx.VarName();
+        if (varNameNode == null) {
+            return;
+        }
+        String varName = varNameNode.getText();
+        Map<String, Boolean> localVars = vars.peek();
+        Boolean local = localVars.get(varName);
+        if (local == null) {
+            // new variable
+            Def varDef = def(varNameNode.getSymbol(), DefKind.VARIABLE);
+            if (blockName != null) {
+                varDef.local = true;
+                varDef.exported = false;
+                local = true;
+            } else {
+                varDef.local = false;
+                varDef.exported = true;
+                local = false;
+            }
+            varDef.defKey = new DefKey(null, blockName != null ? blockName + '/' + varName : varName);
+            emit(varDef);
+            localVars.put(varName, local);
+        } else {
+            Ref varRef = ref(varNameNode);
+            varRef.defKey = new DefKey(null, local ? blockName + '/' + varName : varName);
+            emit(varRef);
+        }
+    }
 
+    @Override
+    public void enterGlobalStatement(PHPParser.GlobalStatementContext ctx) {
+        if (this.vars.size() < 2) {
+            return;
+        }
+        List<PHPParser.GlobalVarContext> vars = ctx.globalVar();
+        if (vars == null) {
+            return;
+        }
+        for (PHPParser.GlobalVarContext var : vars) {
+            TerminalNode varNameNode = var.VarName();
+            if (varNameNode != null) {
+                String varName = varNameNode.getText();
+                if (!this.vars.firstElement().containsKey(varName)) {
+                    continue;
+                }
+                Ref globalVarRef = ref(varNameNode);
+                globalVarRef.defKey = new DefKey(null, varName);
+                emit(globalVarRef);
+                this.vars.peek().put(varName, false);
+            }
+        }
     }
 
     private static String extractIncludeName(String expressionText) {

@@ -18,7 +18,7 @@ public class DefKey {
     }
 
     public String formatPath() {
-        return getPath().replace('.', '/').replace('$', '.');
+        return getPath();
     }
 
     public String formatTreePath() {
